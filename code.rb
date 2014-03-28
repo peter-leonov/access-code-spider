@@ -4,46 +4,48 @@ require 'anemone'
 require 'logger/colors'
 
 log = Logger.new(STDOUT)
-log.formatter = proc { |s,d,p,m| "#{s}: #{m}\n" }
+log.formatter = proc { |s,d,p,m| "#{m}\n" }
 
 HTTP_ROOT = 'http://echo.msk.ru'
-PATH_START = HTTP_ROOT + '/programs/code/'
+PATH_START = HTTP_ROOT + '/programs/code/archive/1.html'
 PATH_FILTER = %r{/programs/code/archive/}
 PATH_BLACKLIST = %r{comments|xml}
-DELAY = 2.0
+DELAY = 3.0 # seconds
 
-FileUtils.mkdir_p 'code'
-Dir.chdir 'code'
-
-remap = {
-  'января' => '01',
-  'февраля' => '02',
-  'марта' => '03',
-  'апреля' => '04',
-  'мая' => '05',
-  'июня' => '06',
-  'июля' => '07',
-  'августа' => '08',
-  'сентября' => '09',
-  'октября' => '10',
-  'ноября' => '11',
-  'декабря' => '12',
-}
-
-loaded = Dir['*.mp3'].map do |name|
-  m = /^(\S+) (\S+) (\S+)\./.match name
-  unless m
-    log.error "FAILED TO PARSE DATE: #{name}"
-    next
+module TheDate
+  NAME_TO_N = {
+    'января' => '01',
+    'февраля' => '02',
+    'марта' => '03',
+    'апреля' => '04',
+    'мая' => '05',
+    'июня' => '06',
+    'июля' => '07',
+    'августа' => '08',
+    'сентября' => '09',
+    'октября' => '10',
+    'ноября' => '11',
+    'декабря' => '12',
+  }
+  
+  def self.parse date
+    m = /^(\d{2}) (\S+) (\d{4}), \d+:\d+$/.match(date)
+    unless m
+      raise "failed to parse date: #{date}"
+    end
+    unless month = NAME_TO_N[m[2]]
+      raise "failed to parse month: '#{month}' in '#{date}'"
+    end
+    "#{m[3]}-#{month}-#{m[1]}"
   end
-  unless month = remap[m[2]]
-    log.error "FAILED TO PARSE MONTH: #{month}"
-    next
-  end
-  File.rename name, "#{m[3]}-#{month}-#{m[1]}.mp3"
 end
 
-exit 0
+
+FileUtils.mkdir_p 'files'
+Dir.chdir 'files'
+
+
+$done = Dir['*.mp3'].map { |name| name[/^[^.]+/] } .inject({}) { |c,v| c[v] = true; c }
 
 Anemone.crawl(PATH_START) do |anemone|
   # anemone.storage = Anemone::Storage.SQLite3
@@ -55,18 +57,41 @@ Anemone.crawl(PATH_START) do |anemone|
     puts page.url
     begin
       page.doc.css('.topBlock.lastBroadcast .list .column').each do |column|
-        url = column.css('.icInfo.icDownload').attr('href').to_s
+        date = TheDate.parse(column.css('.date').text.strip)
         
-        date = column.css('.date span').text.to_s[/.+(?=,)/]
-        log.error "FAILED TO PARSE DATE: #{name}"
+        anchors = column.css('.icInfo.icDownload')
+        if anchors.size == 0
+          log.warn "none links found for date #{date}"
+          next
+        end
         
-        puts "#{date} from #{url}"
-        system("curl", "-L", "-o", "#{date}.mp3", url)
-        
-        sleep DELAY
+        anchors.each_with_index do |a, i|
+          url = a['href'].to_s
+          
+          unless /mp3/ =~ url
+            log.warn "url does not look like mp3 link: #{url}"
+          end
+          
+          fname = i == 0 ? date : "#{date}-#{i}"
+          if $done[fname]
+            log.debug "  done already: #{fname}"
+            next
+          end
+
+          log.info "  #{fname} from #{url}"
+          unless system("curl", "-s", "-L", "-o", "#{fname}-part.mp3", url)
+            log.error "failed to download file"
+            next
+          end
+          File.rename("#{fname}-part.mp3", "#{fname}.mp3")
+
+          sleep DELAY
+        end
       end
     rescue => e
-      puts "failed #{page.url}: #{e.message}"
+      log.error e.message
+    ensure
+      sleep DELAY
     end
   end
   
