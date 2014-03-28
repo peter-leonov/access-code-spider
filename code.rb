@@ -11,6 +11,7 @@ PATH_START = HTTP_ROOT + '/programs/code/archive/1.html'
 PATH_FILTER = %r{/programs/code/archive/}
 PATH_BLACKLIST = %r{comments|xml}
 DELAY = 3.0 # seconds
+MAX_TIME = 15 # seconds waiting for file
 
 module TheDate
   NAME_TO_N = {
@@ -79,7 +80,7 @@ Anemone.crawl(PATH_START) do |anemone|
           end
 
           log.info "  #{fname} from #{url}"
-          unless system("curl", "-s", "-L", "-o", "#{fname}-part.mp3", url)
+          unless system("curl", "-s", "-L", "--retry", "10", "-m", "#{MAX_TIME}", "-o", "#{fname}-part.mp3", url)
             log.error "failed to download file"
             next
           end
