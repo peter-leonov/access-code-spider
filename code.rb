@@ -51,6 +51,7 @@ $done = Dir['*.mp3'].map { |name| name[/^[^.]+/] } .inject({}) { |c,v| c[v] = tr
 Anemone.crawl(PATH_START) do |anemone|
   # anemone.storage = Anemone::Storage.SQLite3
   
+  anemone.user_agent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_9_2) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/33.0.#{rand(1750)}.152 Safari/537.36"
   anemone.delay = DELAY
   anemone.threads = 1
   
